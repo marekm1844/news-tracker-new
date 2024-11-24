@@ -1,13 +1,15 @@
-import "./globals.css";
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
-import { Toaster } from "sonner";
+import "./globals.css";
+import { Toaster } from "@/components/ui/toaster";
+import { cn } from "@/lib/utils";
+import { ArticleProvider } from "@/contexts/ArticleContext";
 
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Marketing Content Swiper",
-  description: "Generate and swipe marketing content for LinkedIn and Twitter",
+  title: "News Tracker",
+  description: "Track changes in news articles",
 };
 
 export default function RootLayout({
@@ -17,18 +19,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>
-        {children}
-        <Toaster
-          position="top-center"
-          toastOptions={{
-            style: {
-              background: "red",
-              color: "white",
-            },
-            duration: 3000,
-          }}
-        />
+      <body className={cn(inter.className, "min-h-screen bg-background")}>
+        <ArticleProvider>
+          {children}
+          <Toaster />
+        </ArticleProvider>
       </body>
     </html>
   );

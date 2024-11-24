@@ -94,128 +94,63 @@ Focus on:
 - Cultural relevance
 Return only the keywords, no explanation.`;
 
-async function searchUnsplashImage(query: string): Promise<{
-  imageUrl: string;
-  photographer: string;
-  photographerUrl: string;
-}> {
-  try {
-    const response = await fetch(
-      `https://api.unsplash.com/search/photos?query=${encodeURIComponent(
-        query
-      )}&per_page=1`,
-      {
-        headers: {
-          Authorization: `Client-ID ${process.env.UNSPLASH_ACCESS_KEY}`,
-        },
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error("Failed to fetch image from Unsplash");
-    }
-
-    const data = await response.json();
-    if (data.results && data.results.length > 0) {
-      const image = data.results[0];
-      return {
-        imageUrl: image.urls.regular,
-        photographer: image.user.name,
-        photographerUrl: image.user.links.html,
-      };
-    }
-
-    return {
-      imageUrl: "https://images.unsplash.com/photo-1560472354-b33ff0c44a43",
-      photographer: "Default Photographer",
-      photographerUrl: "https://unsplash.com",
-    };
-  } catch (error) {
-    console.error("Error fetching Unsplash image:", error);
-    return {
-      imageUrl: "https://images.unsplash.com/photo-1560472354-b33ff0c44a43",
-      photographer: "Default Photographer",
-      photographerUrl: "https://unsplash.com",
-    };
-  }
-}
-
 export async function POST(request: NextRequest) {
   try {
-    const { articleUrl, platform, articleContent } = await request.json();
+    console.log("POST function called - Starting analysis");
+    const { originalContent, newContent } = await request.json();
+    console.log("Received content for analysis:", {
+      originalContentLength: originalContent?.length,
+      newContentLength: newContent?.length,
+    });
 
-    // Select the appropriate prompts based on platform
-    const systemPrompt = platform === "linkedin" ? LINKEDIN_PROMPT : X_PROMPT;
-    const imagePrompt =
-      platform === "linkedin" ? LINKEDIN_IMAGE_PROMPT : X_IMAGE_PROMPT;
+    const prompt = `Analyze the differences between these two versions of a news article.
+Original content:
+${originalContent}
 
-    // Generate title and content together
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        {
-          role: "system",
-          content: systemPrompt,
-        },
-        {
-          role: "user",
-          content: `Based on this article, create a ${platform} post: "${articleContent}"`,
-        },
-      ],
+New content:
+${newContent}
+
+Please analyze the changes and determine if they are:
+1. Purely editorial (spelling, grammar, style) or
+2. Substantial (changing meaning, adding/removing information)
+
+Provide a concise explanation of your analysis. Format your response as JSON with two fields:
+- type: either "editorial" or "substantial"
+- explanation: your analysis of the changes`;
+
+    console.log("Sending request to OpenAI");
+    const analysisCompletion = await openai.chat.completions.create({
+      messages: [{ role: "user", content: prompt }],
+      model: "gpt-4",
       temperature: 0.7,
     });
 
-    const response = completion.choices[0].message.content || "";
-    const titleMatch = response.match(/TITLE:\s*([^\n]+)/);
-    const contentMatch = response.match(/CONTENT:\s*([\s\S]+)$/);
+    const analysisResponse =
+      analysisCompletion.choices[0].message.content ??
+      "Could not parse the analysis";
 
-    const title = titleMatch
-      ? titleMatch[1].trim()
-      : `${platform === "linkedin" ? "LinkedIn" : "X"} Post`;
-    const content = contentMatch ? contentMatch[1].trim() : response;
+    console.log("Received response from OpenAI:", analysisResponse);
 
-    // Generate image keywords with platform-specific guidance
-    const imageKeywordsResponse = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        {
-          role: "system",
-          content: imagePrompt,
-        },
-        {
-          role: "user",
-          content: `Create image search keywords for this ${platform} post: ${content}`,
-        },
-      ],
-      temperature: 0.8,
-    });
-
-    // Get unused keywords for this article
-    const allKeywords =
-      imageKeywordsResponse.choices[0].message.content ||
-      "professional business";
-    const unusedKeywords = getUnusedKeywords(articleUrl, allKeywords);
-
-    // Get the image URL from Unsplash using unused keywords
-    const imageData = await searchUnsplashImage(unusedKeywords);
-
-    // Clean up history if it gets too large
-    if (keywordHistory.length > 100) {
-      keywordHistory = keywordHistory.slice(-50);
+    let parsedResponse;
+    try {
+      parsedResponse = JSON.parse(analysisResponse);
+      return NextResponse.json({
+        type: parsedResponse.type || "unknown",
+        explanation: parsedResponse.explanation || "Could not analyze changes",
+        success: true,
+      });
+    } catch (e) {
+      console.error("Error parsing analysis:", e);
+      return NextResponse.json({
+        type: "unknown",
+        explanation: analysisResponse,
+        success: false,
+      });
     }
-
-    return NextResponse.json({
-      text: content,
-      title: title,
-      imagePrompt: unusedKeywords,
-      imageUrl: imageData.imageUrl,
-      imageAuthor: imageData.photographer,
-      imageAuthorUrl: imageData.photographerUrl,
-    });
   } catch (error) {
     console.error("Error in API route:", error);
     return NextResponse.json(
-      { error: "Failed to generate content" },
+      { error: "Failed to process the request", success: false },
       { status: 500 }
     );
   }
