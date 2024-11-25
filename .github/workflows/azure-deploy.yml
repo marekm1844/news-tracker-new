@@ -31,7 +31,10 @@ jobs:
         run: pnpm install
 
       - name: Build Next.js app
-        run: pnpm build
+        run: |
+          pnpm install
+          pnpm build
+          pnpm install --production
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           UNSPLASH_ACCESS_KEY: ${{ secrets.UNSPLASH_ACCESS_KEY }}
@@ -39,12 +42,20 @@ jobs:
           SCRAPER_API_KEY: ${{ secrets.SCRAPER_API_KEY }}
           NEXT_PUBLIC_NEWS_API: ${{ secrets.NEXT_PUBLIC_NEWS_API }}
 
+      - name: Create deployment package
+        run: |
+          cp package*.json .next/
+          cp pnpm-lock.yaml .next/
+          cp -r node_modules .next/
+          cd .next
+          zip -r ../deployment.zip ./*
+
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v2
         with:
           app-name: ${{ env.AZURE_WEBAPP_NAME }}
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-          package: .
+          package: deployment.zip
 
       - name: Azure Login
         uses: azure/login@v1
@@ -67,7 +78,7 @@ jobs:
               },
               {
                 "name": "STARTUP_COMMAND",
-                "value": "node server.js"
+                "value": "cd /home/site/wwwroot && node server.js"
               }
             ]
           mask-inputs: false
