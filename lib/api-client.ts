@@ -43,31 +43,38 @@ export const api = {
   },
 
   async getLatestVersion(articleId: number): Promise<ArticleVersion> {
-    const response = await axios.get(`${API_BASE_URL}/articles/${articleId}/latest_version`);
+    const response = await axios.get(
+      `${API_BASE_URL}/articles/${articleId}/latest_version`
+    );
     return response.data;
   },
 
   async getVersions(articleId: number): Promise<ArticleVersion[]> {
-    const response = await axios.get(`${API_BASE_URL}/articles/${articleId}/versions`);
+    const response = await axios.get(
+      `${API_BASE_URL}/articles/${articleId}/versions`
+    );
     return response.data;
   },
 
-  async compareContent(originalContent: string, newContent: string): Promise<{
-    type: 'editorial' | 'substantial' | 'unknown';
+  async compareContent(
+    originalContent: string,
+    newContent: string
+  ): Promise<{
+    type: "editorial" | "substantial" | "unknown";
     explanation: string;
   }> {
     // If contents are identical, return immediately without making API call
     if (originalContent === newContent) {
       return {
-        type: 'unknown',
-        explanation: 'No changes detected'
+        type: "unknown",
+        explanation: "No changes detected",
       };
     }
 
-    const response = await fetch('/api/generate', {
-      method: 'POST',
+    const response = await fetch("/api/generate", {
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({
         originalContent,
@@ -76,7 +83,7 @@ export const api = {
     });
 
     if (!response.ok) {
-      throw new Error('Failed to analyze changes');
+      throw new Error("Failed to analyze changes");
     }
 
     return response.json();
