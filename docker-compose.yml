@@ -1,0 +1,30 @@
+version: "3.8"
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        OPENAI_API_KEY: ${OPENAI_API_KEY}
+        UNSPLASH_ACCESS_KEY: ${UNSPLASH_ACCESS_KEY}
+        SCRAPER_API_URL: ${SCRAPER_API_URL}
+        SCRAPER_API_KEY: ${SCRAPER_API_KEY}
+        NEXT_PUBLIC_NEWS_API: ${NEXT_PUBLIC_NEWS_API}
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.local
+    environment:
+      - NODE_ENV=development
+    networks:
+      - bizzline-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  bizzline-network:
+    driver: bridge

@@ -1,84 +1,55 @@
-name: Deploy to Azure
+name: Deploy to Azure Web App
+
 on:
   push:
     branches:
       - main
-  workflow_dispatch:
 
 env:
   AZURE_WEBAPP_NAME: news-tracker
-  NODE_VERSION: "20.x"
+  DOCKER_REGISTRY: crbizzline.azurecr.io
+  IMAGE_NAME: news-tracker-app
+  IMAGE_TAG: ${{ github.sha }}
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
-        name: Install pnpm
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Azure
+        uses: azure/login@v1
         with:
-          version: 9
-          run_install: false
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - name: Log in to Azure Container Registry
+        uses: azure/docker-login@v1
         with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: "pnpm"
+          login-server: ${{ env.DOCKER_REGISTRY }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
 
-      - name: Install dependencies
-        run: pnpm install
-
-      - name: Build Next.js app
-        run: |
-          pnpm install
-          pnpm build
-          pnpm install --production
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          UNSPLASH_ACCESS_KEY: ${{ secrets.UNSPLASH_ACCESS_KEY }}
-          SCRAPER_API_URL: ${{ secrets.SCRAPER_API_URL }}
-          SCRAPER_API_KEY: ${{ secrets.SCRAPER_API_KEY }}
-          NEXT_PUBLIC_NEWS_API: ${{ secrets.NEXT_PUBLIC_NEWS_API }}
-
-      - name: Create deployment package
-        run: |
-          cp package*.json .next/
-          cp pnpm-lock.yaml .next/
-          cp -r node_modules .next/
-          cd .next
-          zip -r ../deployment.zip ./*
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          build-args: |
+            OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+            UNSPLASH_ACCESS_KEY=${{ secrets.UNSPLASH_ACCESS_KEY }}
+            SCRAPER_API_URL=${{ secrets.SCRAPER_API_URL }}
+            SCRAPER_API_KEY=${{ secrets.SCRAPER_API_KEY }}
+            NEXT_PUBLIC_NEWS_API=${{ secrets.NEXT_PUBLIC_NEWS_API }}
+          cache-from: type=registry,ref=${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          cache-to: type=inline
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v2
         with:
           app-name: ${{ env.AZURE_WEBAPP_NAME }}
-          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-          package: deployment.zip
-
-      - name: Azure Login
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: Configure Azure Web App
-        uses: azure/appservice-settings@v1
-        with:
-          app-name: ${{ env.AZURE_WEBAPP_NAME }}
-          app-settings-json: |
-            [
-              {
-                "name": "WEBSITE_RUN_FROM_PACKAGE",
-                "value": "0"
-              },
-              {
-                "name": "WEBSITE_NODE_DEFAULT_VERSION",
-                "value": "20.x"
-              },
-              {
-                "name": "STARTUP_COMMAND",
-                "value": "cd /home/site/wwwroot && node server.js"
-              }
-            ]
-          mask-inputs: false
+          images: ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
