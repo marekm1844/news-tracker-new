@@ -28,7 +28,7 @@ export interface ChangesSummary {
 
 export const api = {
   async submitArticle(url: string): Promise<Article> {
-    const response = await axios.post(`${API_BASE_URL}/articles`, { url });
+    const response = await axios.post(`${API_BASE_URL}/articles/`, { url });
     return response.data;
   },
 
@@ -38,15 +38,20 @@ export const api = {
   },
 
   async getArticles(): Promise<Article[]> {
-    const response = await axios.get(`${API_BASE_URL}/articles`);
+    const response = await axios.get(`${API_BASE_URL}/articles/`);
     return response.data;
   },
 
   async getLatestVersion(articleId: number): Promise<ArticleVersion> {
-    const response = await axios.get(
-      `${API_BASE_URL}/articles/${articleId}/latest_version`
-    );
-    return response.data;
+    try {
+      const response = await axios.get(
+        `${API_BASE_URL}/articles/${articleId}/latest_version`
+      );
+      return response.data;
+    } catch (error) {
+      console.error(`Error fetching latest version for article ${articleId}:`, error);
+      throw error;
+    }
   },
 
   async getVersions(articleId: number): Promise<ArticleVersion[]> {

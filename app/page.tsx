@@ -1,12 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
 import { useArticle } from "@/contexts/ArticleContext";
 import { api, ArticleVersion, ChangesSummary } from "@/lib/api-client";
-import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertTriangle } from "lucide-react";
 import SideMenu from "@/components/SideMenu";
@@ -14,137 +13,170 @@ import SideMenu from "@/components/SideMenu";
 export default function Home() {
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
-  const [latestVersion, setLatestVersion] = useState<ArticleVersion | null>(null);
+  const [latestVersion, setLatestVersion] = useState<ArticleVersion | null>(
+    null
+  );
   const [showError, setShowError] = useState(false);
   const [showNewspaper, setShowNewspaper] = useState(false);
-  const [changesSummary, setChangesSummary] = useState<ChangesSummary | null>(null);
+  const [changesSummary, setChangesSummary] = useState<ChangesSummary | null>(
+    null
+  );
   const { toast } = useToast();
   const { selectedArticle, setSelectedArticle } = useArticle();
 
-  const handleAnalyze = useCallback(
-    async (urlToAnalyze: string) => {
-      if (!urlToAnalyze) {
-        toast({
-          title: "Error",
-          description: "Please enter a URL",
-          variant: "destructive",
-        });
-        return;
-      }
+  const handleAnalyze = useCallback(async () => {
+    if (!url && !selectedArticle) {
+      setShowError(true);
+      return;
+    }
 
-      if (!urlToAnalyze.includes("nytimes.com")) {
-        toast({
-          title: "Error",
-          description: "Please enter a valid NY Times article URL",
-          variant: "destructive",
-        });
-        return;
-      }
+    setLoading(true);
+    setShowError(false);
+    let articleToAnalyze;
+    let latestVersionToAnalyze;
 
-      setShowError(false);
-      setLoading(true);
-      setChangesSummary({
-        type: "unknown",
-        explanation: "Loading article...",
-        loading: true
-      });
+    setChangesSummary({
+      type: "unknown",
+      explanation: "Loading article...",
+      loading: true,
+    });
 
-      try {
-        let articleToAnalyze;
-        let latestVersionToAnalyze;
+    try {
+      const urlToAnalyze = selectedArticle ? selectedArticle.url : url;
 
-        // Step 1: Load the article
-        if (selectedArticle) {
-          articleToAnalyze = selectedArticle;
-          latestVersionToAnalyze = await api.getLatestVersion(selectedArticle.id);
-        } else {
-          const result = await api.submitArticle(urlToAnalyze);
-          articleToAnalyze = await api.getArticle(result.id);
-          latestVersionToAnalyze = await api.getLatestVersion(result.id);
-          
-          const event = new CustomEvent("refreshArticles");
-          window.dispatchEvent(event);
-        }
-
-        // Update UI with article content immediately
+      // Step 1: Load the article
+      if (selectedArticle) {
+        console.log("Using existing article:", selectedArticle);
+        articleToAnalyze = selectedArticle;
+        console.log(
+          "Fetching latest version for article:",
+          articleToAnalyze.id
+        );
+        latestVersionToAnalyze = await api.getLatestVersion(
+          articleToAnalyze.id
+        );
+      } else {
+        console.log("Submitting new article:", urlToAnalyze);
+        const result = await api.submitArticle(urlToAnalyze);
+        articleToAnalyze = result;
+        console.log(
+          "Fetching latest version for new article:",
+          articleToAnalyze.id
+        );
+        latestVersionToAnalyze = await api.getLatestVersion(
+          articleToAnalyze.id
+        );
         setSelectedArticle(articleToAnalyze);
-        setLatestVersion(latestVersionToAnalyze);
-        setShowNewspaper(true);
+      }
 
-        // Step 2: Perform change analysis
-        if (latestVersionToAnalyze.diff) {
-          setChangesSummary({
-            type: "unknown",
-            explanation: "Analyzing changes...",
-            loading: true
-          });
+      // Update UI with article content immediately
+      setLatestVersion(latestVersionToAnalyze);
+      setShowNewspaper(true);
 
-          // Get all versions for analysis
-          const versions = await api.getVersions(articleToAnalyze.id);
-          const originalVersion = versions.sort((a, b) => a.id - b.id)[0];
+      // Step 2: Perform change analysis
+      if (latestVersionToAnalyze.diff) {
+        setChangesSummary({
+          type: "unknown",
+          explanation: "Analyzing changes...",
+          loading: true,
+        });
 
-          // Analyze changes
+        // Get all versions for analysis
+        const versions = await api.getVersions(articleToAnalyze.id);
+        const originalVersion = versions[0];
+
+        // Compare content only if there are multiple versions
+        if (versions.length > 1) {
           const analysisResult = await api.compareContent(
             originalVersion.content,
             latestVersionToAnalyze.content
           );
-          
+
           setChangesSummary({
             type: analysisResult.type,
             explanation: analysisResult.explanation,
-            loading: false
+            loading: false,
           });
 
           toast({
-            title: "Analysis Complete",
-            description: `Changes detected: ${analysisResult.type}`,
+            title: "Analysis complete",
+            description: "Article changes have been analyzed.",
           });
         } else {
+          // Handle case where there's only one version (no diff)
           setChangesSummary({
             type: "unknown",
-            explanation: "No changes detected in this article.",
-            loading: false
+            explanation: "This is the first version of the article.",
+            loading: false,
           });
 
           toast({
-            description: "Article loaded. No changes detected.",
+            title: "Article loaded",
+            description: "This is the first version of this article.",
           });
         }
-        
-      } catch (error: any) {
-        console.error("Error analyzing article:", error);
-        if (error.response?.status === 422) {
-          setShowError(true);
-        } else {
-          toast({
-            title: "Error",
-            description: "Failed to analyze article",
-            variant: "destructive",
-          });
-        }
+      } else {
         setChangesSummary({
           type: "unknown",
-          explanation: "Failed to analyze article",
+          explanation: "No changes detected in this article.",
           loading: false,
-          error: "Analysis failed"
         });
-      } finally {
-        setLoading(false);
+
+        toast({
+          description: "Article loaded. No changes detected.",
+        });
       }
+    } catch (error: any) {
+      console.error("Error analyzing article:", error);
+      if (error.response?.status === 422) {
+        setShowError(true);
+      } else {
+        toast({
+          title: "Error",
+          description: "Failed to analyze article",
+          variant: "destructive",
+        });
+      }
+      setChangesSummary({
+        type: "unknown",
+        explanation: "Failed to analyze article",
+        loading: false,
+        error: "Analysis failed",
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [toast, setSelectedArticle, selectedArticle]);
+
+  const handleArticleSelect = useCallback(
+    async (selectedUrl: string, version: ArticleVersion | null) => {
+      console.log("Article selected with URL:", selectedUrl);
+      setUrl(selectedUrl);
+      setShowError(false);
+      setShowNewspaper(true);
+
+      if (version) {
+        console.log("Setting latest version:", version);
+        setLatestVersion(version);
+      }
+
+      setChangesSummary({
+        type: "unknown",
+        explanation: "Loading article...",
+        loading: true,
+      });
     },
-    [toast, setSelectedArticle, selectedArticle]
+    []
   );
 
-  const handleArticleSelect = useCallback((selectedUrl: string) => {
-    setUrl(selectedUrl);
-    setShowError(false);
-    setShowNewspaper(false);
-    setChangesSummary(null);
-  }, []);
+  useEffect(() => {
+    if (selectedArticle) {
+      setUrl(selectedArticle.url);
+    }
+  }, [selectedArticle]);
 
   const combineContentAndDiff = (content: string, diff: string) => {
-    if (!diff) return formatContent(content);
-
+    if (!diff) return content;
     const parser = new DOMParser();
     const diffDoc = parser.parseFromString(diff, "text/html");
 
@@ -206,138 +238,86 @@ export default function Home() {
       .join("\n");
   };
 
-  const renderContent = () => {
+  const displayContent = useMemo(() => {
     if (!latestVersion) return null;
-    return combineContentAndDiff(latestVersion.content, latestVersion.diff);
-  };
 
-  // Fetch latest version when selected article changes
-  useEffect(() => {
-    if (selectedArticle) {
-      const fetchLatestVersion = async () => {
-        try {
-          const latest = await api.getLatestVersion(selectedArticle.id);
-          setLatestVersion(latest);
-        } catch (error) {
-          console.error("Error fetching latest version:", error);
-          toast({
-            title: "Error",
-            description: "Failed to fetch latest version",
-            variant: "destructive",
-          });
-        }
-      };
-
-      fetchLatestVersion();
-    } else {
-      setLatestVersion(null);
-    }
-  }, [selectedArticle, toast]);
+    return (
+      <div className="bg-white rounded-lg shadow-lg p-8">
+        <div className="text-center mb-8">
+          <div className="text-gray-500 mb-2">THE NEW YORK TIMES</div>
+          <h1 className="text-4xl font-serif mb-4">{latestVersion.title}</h1>
+          <div className="text-gray-500">
+            Last updated: {new Date(latestVersion.created_at).toLocaleString()}
+          </div>
+        </div>
+        <div className="prose max-w-none">
+          <div
+            dangerouslySetInnerHTML={{
+              __html: combineContentAndDiff(
+                latestVersion.content,
+                latestVersion.diff || ""
+              ),
+            }}
+          />
+        </div>
+      </div>
+    );
+  }, [latestVersion]);
 
   return (
     <div className="flex h-screen">
-      <SideMenu 
+      <SideMenu
         onArticleSelect={handleArticleSelect}
         changesSummary={changesSummary}
       />
       <div className="flex-1 overflow-auto">
         <div className="container mx-auto p-8">
           <div className="space-y-8">
-            <Card>
-              <CardHeader>
-                <CardTitle>NY Times Article Tracker</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex gap-4">
-                  <Input
-                    placeholder="Enter NY Times article URL"
-                    value={url}
-                    onChange={(e) => setUrl(e.target.value)}
-                  />
-                  <Button onClick={() => handleAnalyze(url)} disabled={loading}>
-                    {loading ? "Analyzing..." : "Analyze"}
-                  </Button>
+            <div className="bg-white rounded-lg shadow-lg p-6">
+              <h1 className="text-2xl font-bold mb-6">
+                NY Times Article Tracker
+              </h1>
+              <div className="flex gap-4">
+                <Input
+                  placeholder="Enter NY Times article URL"
+                  className="flex-grow"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                />
+                <Button onClick={handleAnalyze} disabled={loading}>
+                  {loading ? "Analyzing..." : "Analyze"}
+                </Button>
+              </div>
+              {showError && (
+                <div className="mt-4 text-red-500">
+                  Please enter a valid NY Times URL
                 </div>
-                {showError && (
-                  <Alert variant="destructive" className="mt-4">
-                    <AlertTriangle className="h-4 w-4" />
-                    <AlertTitle>Unable to Process Article</AlertTitle>
-                    <AlertDescription>
-                      We cannot process this article. It might be behind a
-                      paywall or not accessible. Please make sure you have
-                      access to the article and try again.
-                    </AlertDescription>
-                  </Alert>
-                )}
-              </CardContent>
-            </Card>
+              )}
+            </div>
 
-            {showNewspaper && selectedArticle && latestVersion && (
-              <Card className="newspaper-card">
-                <CardHeader className="text-center border-b border-gray-200 pb-6">
-                  <p className="text-sm uppercase tracking-wider text-gray-500 mb-4">
-                    The New York Times
-                  </p>
-                  <CardTitle className="text-4xl font-serif mb-4">
+            {showNewspaper && latestVersion && (
+              <div className="bg-white rounded-lg shadow-lg p-8">
+                <div className="text-center mb-8">
+                  <div className="text-gray-500 mb-2">THE NEW YORK TIMES</div>
+                  <h1 className="text-4xl font-serif mb-4">
                     {latestVersion.title}
-                  </CardTitle>
-                  <p className="text-sm text-gray-600 italic">
+                  </h1>
+                  <div className="text-gray-500">
                     Last updated:{" "}
                     {new Date(latestVersion.created_at).toLocaleString()}
-                  </p>
-                </CardHeader>
-                <CardContent>
-                  <style jsx global>{`
-                    .article-content {
-                      font-family: georgia, "times new roman", times, serif;
-                      font-size: 1.125rem;
-                      line-height: 1.8;
-                      color: #333;
-                      max-width: 65ch;
-                      margin: 0 auto;
-                    }
-                    .article-content p {
-                      margin: 0 0 1.5rem 0;
-                      text-indent: 2rem;
-                      white-space: pre-wrap;
-                    }
-                    .article-content .inserted {
-                      background-color: #dcfce7;
-                      color: #166534;
-                      text-decoration: none;
-                      padding: 0.125rem 0.25rem;
-                      border-radius: 0.25rem;
-                    }
-                    .article-content .deleted {
-                      background-color: #fee2e2;
-                      color: #991b1b;
-                      text-decoration: line-through;
-                      padding: 0.125rem 0.25rem;
-                      border-radius: 0.25rem;
-                    }
-                    .article-content h1,
-                    .article-content h2,
-                    .article-content h3 {
-                      font-family: "times new roman", times, serif;
-                      font-weight: bold;
-                      margin: 2rem 0 1rem 0;
-                    }
-                    .newspaper-card {
-                      background-color: #fff9f5;
-                      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1),
-                        0 2px 4px -1px rgba(0, 0, 0, 0.06);
-                    }
-                  `}</style>
-                  <div className="article-content p-6 md:p-8 lg:p-12">
-                    <div
-                      className="article-content"
-                      dangerouslySetInnerHTML={{
-                        __html: renderContent() || "",
-                      }}
-                    />
                   </div>
-                </CardContent>
-              </Card>
+                </div>
+                <div className="prose max-w-none article-content">
+                  <div
+                    dangerouslySetInnerHTML={{
+                      __html: combineContentAndDiff(
+                        latestVersion.content,
+                        latestVersion.diff || ""
+                      ),
+                    }}
+                  />
+                </div>
+              </div>
             )}
           </div>
         </div>

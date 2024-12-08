@@ -9,7 +9,7 @@ import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 
 interface SideMenuProps {
-  onArticleSelect: (url: string) => void;
+  onArticleSelect: (url: string, latestVersion: ArticleVersion | null) => void;
   changesSummary: ChangesSummary | null;
 }
 
@@ -17,6 +17,7 @@ export default function SideMenu({ onArticleSelect, changesSummary }: SideMenuPr
   const [articles, setArticles] = useState<Article[]>([]);
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
   const [latestVersion, setLatestVersion] = useState<ArticleVersion | null>(null);
+  const [changesSummaryState, setChangesSummary] = useState<ChangesSummary | null>(changesSummary);
   const { toast } = useToast();
 
   const fetchArticles = useCallback(async () => {
@@ -34,30 +35,56 @@ export default function SideMenu({ onArticleSelect, changesSummary }: SideMenuPr
   }, [toast]);
 
   const handleArticleClick = async (article: Article) => {
+    console.log('Article selected:', article);
     setSelectedArticle(article);
-    if (onArticleSelect) {
-      onArticleSelect(article.url);
-    }
 
     try {
-      // Get all versions and the latest version
-      const [versions, latest] = await Promise.all([
-        api.getVersions(article.id),
-        api.getLatestVersion(article.id)
-      ]);
-
-      // Sort versions by id and get the first one (original)
-      const originalVersion = versions.sort((a, b) => a.id - b.id)[0];
-      setLatestVersion(latest);
+      // Get latest version immediately
+      const latestVersion = await api.getLatestVersion(article.id);
+      setLatestVersion(latestVersion);
       
+      // Get all versions for analysis
+      const versions = await api.getVersions(article.id);
+      const originalVersion = versions[0];
+
+      if (versions.length > 1) {
+        const analysisResult = await api.compareContent(
+          originalVersion.content,
+          latestVersion.content
+        );
+
+        setChangesSummary({
+          type: analysisResult.type,
+          explanation: analysisResult.explanation,
+          loading: false,
+        });
+
+        toast({
+          title: "Analysis complete",
+          description: "Article changes have been analyzed.",
+        });
+      } else {
+        setChangesSummary({
+          type: "unknown",
+          explanation: "This is the first version of the article.",
+          loading: false,
+        });
+
+        toast({
+          title: "Article loaded",
+          description: "This is the first version of this article.",
+        });
+      }
     } catch (error) {
-      console.error("Error fetching versions:", error);
+      console.error('Error analyzing article:', error);
       toast({
         title: "Error",
-        description: "Failed to fetch article versions",
+        description: "Failed to analyze article changes.",
         variant: "destructive",
       });
     }
+
+    onArticleSelect(article.url, latestVersion);
   };
 
   useEffect(() => {
@@ -107,34 +134,34 @@ export default function SideMenu({ onArticleSelect, changesSummary }: SideMenuPr
       <div className="p-4 bg-gray-50 border-t border-gray-200">
         <h2 className="text-lg font-semibold mb-3">Analysis Results</h2>
         <div className="space-y-3">
-          {changesSummary ? (
+          {changesSummaryState ? (
             <div>
               <div className="flex items-center gap-2 mb-2">
-                {changesSummary.loading ? (
+                {changesSummaryState.loading ? (
                   <div className="flex items-center gap-2">
                     <div className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
                     <span className="text-sm text-blue-600 font-medium">
-                      {changesSummary.explanation}
+                      {changesSummaryState.explanation}
                     </span>
                   </div>
                 ) : (
                   <span
                     className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      changesSummary.type === "editorial"
+                      changesSummaryState.type === "editorial"
                         ? "bg-green-100 text-green-800"
-                        : changesSummary.type === "substantial"
+                        : changesSummaryState.type === "substantial"
                         ? "bg-orange-100 text-orange-800"
                         : "bg-gray-100 text-gray-800"
                     }`}
                   >
-                    {changesSummary.type.charAt(0).toUpperCase() +
-                      changesSummary.type.slice(1)}
+                    {changesSummaryState.type.charAt(0).toUpperCase() +
+                      changesSummaryState.type.slice(1)}
                   </span>
                 )}
               </div>
-              {!changesSummary.loading && (
+              {!changesSummaryState.loading && (
                 <p className="text-xs text-gray-600 whitespace-pre-wrap leading-relaxed">
-                  {changesSummary.explanation}
+                  {changesSummaryState.explanation}
                 </p>
               )}
             </div>
