@@ -77,12 +77,14 @@ body {
 
 /* Add these styles to your existing globals.css */
 .prose {
+  font-family: Georgia, serif;
+  line-height: 1.6;
+  font-size: 1.125rem;
   max-width: 65ch;
-  line-height: 1.75;
 }
 
 .prose p {
-  margin-bottom: 1.25em;
+  margin-bottom: 1.5rem;
 }
 
 /* Add to your existing styles */
@@ -94,10 +96,80 @@ body {
   color: #1f2937;
 }
 
+/* Change highlighting styles */
+.inserted {
+  background-color: #e6ffe6;
+  color: #006400;
+  text-decoration: none;
+  position: relative;
+  cursor: help;
+  padding: 0 2px;
+  border-radius: 2px;
+  transition: background-color 0.2s ease;
+}
+
+.deleted {
+  background-color: #ffe6e6;
+  color: #8b0000;
+  text-decoration: line-through;
+  position: relative;
+  cursor: help;
+  padding: 0 2px;
+  border-radius: 2px;
+  transition: background-color 0.2s ease;
+}
+
+.inserted:hover {
+  background-color: #ccffcc;
+}
+
+.deleted:hover {
+  background-color: #ffcccc;
+}
+
+/* Article content styles */
+.prose {
+  font-family: Georgia, serif;
+  line-height: 1.6;
+  font-size: 1.125rem;
+}
+
 .prose p {
-  margin-bottom: 1.25em;
-  line-height: 1.75;
-  color: #374151;
+  margin-bottom: 1.5rem;
+}
+
+/* Article styles */
+.article-content {
+  max-width: 65ch;
+  margin: 0 auto;
+  padding: 2rem;
+  font-family: Georgia, serif;
+  line-height: 1.6;
+}
+
+.article-content p {
+  margin-bottom: 1.5rem;
+}
+
+/* Remove version-specific colors */
+.inserted-v2, .inserted-v3, .inserted-v4,
+.deleted-v2, .deleted-v3, .deleted-v4 {
+  /* Use the base inserted/deleted styles instead */
+  background-color: inherit;
+  color: inherit;
+}
+
+/* Base styles for changes */
+.inserted {
+  background-color: #e6ffe6;
+  color: #006400;
+  text-decoration: none;
+}
+
+.deleted {
+  background-color: #ffe6e6;
+  color: #8b0000;
+  text-decoration: line-through;
 }
 
 /* Article styles */
@@ -124,6 +196,54 @@ body {
 .article-content .deleted {
   background-color: #fee2e2;
   color: #991b1b;
+  text-decoration: line-through;
+  padding: 0.125rem 0.25rem;
+  border-radius: 0.25rem;
+}
+
+.article-content .inserted-v2 {
+  background-color: #dcfce7;
+  color: #166534;
+  text-decoration: none;
+  padding: 0.125rem 0.25rem;
+  border-radius: 0.25rem;
+}
+
+.article-content .deleted-v2 {
+  background-color: #fee2e2;
+  color: #991b1b;
+  text-decoration: line-through;
+  padding: 0.125rem 0.25rem;
+  border-radius: 0.25rem;
+}
+
+.article-content .inserted-v3 {
+  background-color: #dbeafe;
+  color: #1e40af;
+  text-decoration: none;
+  padding: 0.125rem 0.25rem;
+  border-radius: 0.25rem;
+}
+
+.article-content .deleted-v3 {
+  background-color: #fef3c7;
+  color: #92400e;
+  text-decoration: line-through;
+  padding: 0.125rem 0.25rem;
+  border-radius: 0.25rem;
+}
+
+.article-content .inserted-v4 {
+  background-color: #f3e8ff;
+  color: #6b21a8;
+  text-decoration: none;
+  padding: 0.125rem 0.25rem;
+  border-radius: 0.25rem;
+}
+
+.article-content .deleted-v4 {
+  background-color: #ffe4e6;
+  color: #9f1239;
   text-decoration: line-through;
   padding: 0.125rem 0.25rem;
   border-radius: 0.25rem;

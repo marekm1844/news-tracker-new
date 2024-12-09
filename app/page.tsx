@@ -5,264 +5,252 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/use-toast";
 import { useArticle } from "@/contexts/ArticleContext";
-import { api, ArticleVersion, ChangesSummary } from "@/lib/api-client";
+import { api, Article, ArticleVersion, ChangesSummary, MultiVersionChanges, VersionChanges } from "@/lib/api-client";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertTriangle } from "lucide-react";
 import SideMenu from "@/components/SideMenu";
 
 export default function Home() {
-  const [url, setUrl] = useState("");
+  const [url, setUrl] = useState<string>("");
+  const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
   const [loading, setLoading] = useState(false);
-  const [latestVersion, setLatestVersion] = useState<ArticleVersion | null>(
-    null
-  );
+  const [multiVersionChanges, setMultiVersionChanges] = useState<MultiVersionChanges | null>(null);
   const [showError, setShowError] = useState(false);
   const [showNewspaper, setShowNewspaper] = useState(false);
-  const [changesSummary, setChangesSummary] = useState<ChangesSummary | null>(
-    null
-  );
+  const [changesSummary, setChangesSummary] = useState<ChangesSummary | null>(null);
   const { toast } = useToast();
-  const { selectedArticle, setSelectedArticle } = useArticle();
 
   const handleAnalyze = useCallback(async () => {
-    if (!url && !selectedArticle) {
+    if (!url) {
       setShowError(true);
       return;
     }
 
-    setLoading(true);
-    setShowError(false);
-    let articleToAnalyze;
-    let latestVersionToAnalyze;
-
-    setChangesSummary({
-      type: "unknown",
-      explanation: "Loading article...",
-      loading: true,
-    });
-
     try {
-      const urlToAnalyze = selectedArticle ? selectedArticle.url : url;
-
-      // Step 1: Load the article
-      if (selectedArticle) {
-        console.log("Using existing article:", selectedArticle);
-        articleToAnalyze = selectedArticle;
-        console.log(
-          "Fetching latest version for article:",
-          articleToAnalyze.id
-        );
-        latestVersionToAnalyze = await api.getLatestVersion(
-          articleToAnalyze.id
-        );
-      } else {
-        console.log("Submitting new article:", urlToAnalyze);
-        const result = await api.submitArticle(urlToAnalyze);
-        articleToAnalyze = result;
-        console.log(
-          "Fetching latest version for new article:",
-          articleToAnalyze.id
-        );
-        latestVersionToAnalyze = await api.getLatestVersion(
-          articleToAnalyze.id
-        );
-        setSelectedArticle(articleToAnalyze);
-      }
-
-      // Update UI with article content immediately
-      setLatestVersion(latestVersionToAnalyze);
-      setShowNewspaper(true);
-
-      // Step 2: Perform change analysis
-      if (latestVersionToAnalyze.diff) {
-        setChangesSummary({
-          type: "unknown",
-          explanation: "Analyzing changes...",
-          loading: true,
-        });
-
-        // Get all versions for analysis
-        const versions = await api.getVersions(articleToAnalyze.id);
-        const originalVersion = versions[0];
-
-        // Compare content only if there are multiple versions
-        if (versions.length > 1) {
-          const analysisResult = await api.compareContent(
-            originalVersion.content,
-            latestVersionToAnalyze.content
-          );
-
-          setChangesSummary({
-            type: analysisResult.type,
-            explanation: analysisResult.explanation,
-            loading: false,
-          });
-
-          toast({
-            title: "Analysis complete",
-            description: "Article changes have been analyzed.",
-          });
-        } else {
-          // Handle case where there's only one version (no diff)
-          setChangesSummary({
-            type: "unknown",
-            explanation: "This is the first version of the article.",
-            loading: false,
-          });
-
-          toast({
-            title: "Article loaded",
-            description: "This is the first version of this article.",
-          });
-        }
-      } else {
-        setChangesSummary({
-          type: "unknown",
-          explanation: "No changes detected in this article.",
-          loading: false,
-        });
-
-        toast({
-          description: "Article loaded. No changes detected.",
-        });
-      }
-    } catch (error: any) {
-      console.error("Error analyzing article:", error);
-      if (error.response?.status === 422) {
-        setShowError(true);
-      } else {
-        toast({
-          title: "Error",
-          description: "Failed to analyze article",
-          variant: "destructive",
-        });
-      }
-      setChangesSummary({
-        type: "unknown",
-        explanation: "Failed to analyze article",
-        loading: false,
-        error: "Analysis failed",
-      });
-    } finally {
-      setLoading(false);
-    }
-  }, [toast, setSelectedArticle, selectedArticle]);
-
-  const handleArticleSelect = useCallback(
-    async (selectedUrl: string, version: ArticleVersion | null) => {
-      console.log("Article selected with URL:", selectedUrl);
-      setUrl(selectedUrl);
       setShowError(false);
-      setShowNewspaper(true);
-
-      if (version) {
-        console.log("Setting latest version:", version);
-        setLatestVersion(version);
-      }
-
       setChangesSummary({
         type: "unknown",
         explanation: "Loading article...",
         loading: true,
       });
+
+      setLoading(true);
+      console.log('Starting analysis for URL:', url);
+
+      // Step 1: Submit article if needed
+      if (!selectedArticle) {
+        console.log('Submitting new article...');
+        const article = await api.submitArticle(url);
+        console.log('Article submitted:', article);
+        setSelectedArticle(article);
+        
+        try {
+          console.log('Fetching versions for article:', article.id);
+          const versions = await api.getVersions(article.id);
+          console.log('Fetched versions:', versions);
+
+          if (!versions || versions.length === 0) {
+            console.log('No versions found');
+            setChangesSummary({
+              type: "unknown",
+              explanation: "No versions found for this article yet. Please check back later.",
+              loading: false,
+            });
+            setLoading(false);
+            toast({
+              title: "Analysis complete",
+              description: "Article submitted successfully. No versions available yet.",
+            });
+            return;
+          }
+
+          // Get changes regardless of version count - compareMultipleVersions will handle single version case
+          console.log(`Found ${versions.length} version(s), processing...`);
+          const multiChanges = await api.compareMultipleVersions(versions);
+          console.log('Processing result:', multiChanges);
+          
+          setMultiVersionChanges(multiChanges);
+          setShowNewspaper(true);
+          
+          if (versions.length === 1) {
+            setChangesSummary({
+              type: "unknown",
+              explanation: "This is the first version of the article. Check back later for updates.",
+              loading: false,
+            });
+            toast({
+              title: "Analysis complete",
+              description: "First version of the article loaded successfully.",
+            });
+          } else {
+            const changeExplanations = multiChanges.changes
+              .map((change, index) => 
+                `Version ${index + 2}: ${change.changes.explanation}`
+              )
+              .join('\n\n');
+
+            setChangesSummary({
+              type: multiChanges.changes[0].changes.type as "editorial" | "substantial" | "multiple",
+              explanation: changeExplanations,
+              loading: false,
+            });
+            toast({
+              title: "Analysis complete",
+              description: `Analyzed ${multiChanges.changes.length} version changes.`,
+            });
+          }
+        } catch (error) {
+          console.error('Error processing versions:', error);
+          setChangesSummary({
+            type: "unknown",
+            explanation: error instanceof Error ? 
+              `Error processing article versions: ${error.message}` :
+              "Error processing article versions.",
+            loading: false,
+            error: error instanceof Error ? error.message : "Unknown error",
+          });
+          toast({
+            title: "Error",
+            description: error instanceof Error ? error.message : "Failed to process article versions",
+            variant: "destructive",
+          });
+        }
+
+        setLoading(false);
+      }
+    } catch (error) {
+      console.error('Error analyzing article:', error);
+      setChangesSummary({
+        type: "unknown",
+        explanation: "Error analyzing article.",
+        loading: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to analyze article",
+        variant: "destructive",
+      });
+      setLoading(false);
+    }
+  }, [toast, url, selectedArticle, multiVersionChanges]);
+
+  const handleArticleSelect = useCallback(
+    async (selectedUrl: string, changes: MultiVersionChanges | null) => {
+      console.log("Article selected with URL:", selectedUrl, "Changes:", changes);
+      
+      if (!changes) {
+        console.warn("No changes provided for article");
+        return;
+      }
+
+      // Update all states at once
+      setUrl(selectedUrl);
+      setMultiVersionChanges(changes);
+      setShowError(false);
+      setShowNewspaper(true);
+      setChangesSummary({
+        type: "unknown",
+        explanation: "Loading article...",
+        loading: true,
+      });
+
+      // Update changes summary with all version changes
+      const changeExplanations = changes.changes
+        .map((change, index) => 
+          `Version ${index + 2}: ${change.changes.explanation}`
+        )
+        .join('\n\n');
+
+      setChangesSummary({
+        type: changes.changes[0].changes.type as "editorial" | "substantial" | "multiple",
+        explanation: changeExplanations,
+        loading: false,
+      });
     },
     []
   );
 
-  useEffect(() => {
-    if (selectedArticle) {
-      setUrl(selectedArticle.url);
-    }
-  }, [selectedArticle]);
+  const combineContentAndDiff = (content: string, versionChanges: VersionChanges[]) => {
+    if (!versionChanges || versionChanges.length === 0) return formatContent(content);
 
-  const combineContentAndDiff = (content: string, diff: string) => {
-    if (!diff) return content;
-    const parser = new DOMParser();
-    const diffDoc = parser.parseFromString(diff, "text/html");
+    let combinedContent = content;
+    const changes: { text: string; type: string; date: string }[] = [];
 
-    // Convert diff content to paragraphs, replacing ins/del tags with spans
-    const diffContent = diffDoc.body.innerHTML
-      .replace(/<ins>/g, '<span class="inserted">')
-      .replace(/<\/ins>/g, "</span>")
-      .replace(/<del>/g, '<span class="deleted">')
-      .replace(/<\/del>/g, "</span>");
-
-    // Split both contents into paragraphs
-    const contentParagraphs = content.split(/\n{2,}/);
-    const diffParagraphs = diffContent.split(/\n{2,}|<\/?p>|<\/?div>/);
-
-    // Final array of paragraphs
-    const finalParagraphs: string[] = [];
-
-    // Process each paragraph
-    diffParagraphs.forEach((diffP) => {
-      const trimmedDiff = diffP.trim();
-      if (!trimmedDiff) return;
-
-      // If paragraph has insertions, use it from diff
-      if (trimmedDiff.includes('class="inserted"')) {
-        finalParagraphs.push(trimmedDiff);
+    // Process each version's changes
+    versionChanges.forEach((change) => {
+      const changeDate = new Date(change.version.created_at).toLocaleDateString();
+      
+      // Use the existing diff field which contains ins/del tags
+      if (change.version.diff) {
+        // Convert ins/del tags to our span format with dates
+        const processedDiff = change.version.diff
+          .replace(/<ins>(.*?)<\/ins>/g, (_, text) => 
+            `<span class="inserted" title="Added on ${changeDate}">${text}</span>`
+          )
+          .replace(/<del>(.*?)<\/del>/g, (_, text) => 
+            `<span class="deleted" title="Deleted on ${changeDate}">${text}</span>`
+          );
+        
+        combinedContent = processedDiff;
       }
     });
 
-    // Add content paragraphs that weren't replaced
-    contentParagraphs.forEach((contentP) => {
-      const trimmedContent = contentP.trim();
-      if (!trimmedContent) return;
-
-      // Check if this paragraph is already included (from diff)
-      const plainContent = trimmedContent.replace(/<[^>]+>/g, "");
-      const isIncluded = finalParagraphs.some(
-        (p) =>
-          p.replace(/<[^>]+>/g, "").includes(plainContent) ||
-          plainContent.includes(p.replace(/<[^>]+>/g, ""))
-      );
-
-      if (!isIncluded) {
-        finalParagraphs.push(trimmedContent);
-      }
-    });
-
-    // Wrap in paragraph tags and join
-    return finalParagraphs
-      .filter((p) => p.trim())
-      .map((p) => `<p>${p}</p>`)
-      .join("\n");
+    return formatContent(combinedContent);
   };
 
   const formatContent = (content: string) => {
     if (!content) return "";
-    return content
-      .split(/\n{2,}/)
-      .map((p) => `<p>${p.trim()}</p>`)
+    
+    // Preserve existing spans while formatting paragraphs
+    const paragraphs = content.split(/\n{2,}/);
+    return paragraphs
+      .map(paragraph => paragraph.trim())
+      .filter(paragraph => paragraph.length > 0)
+      .map(paragraph => {
+        // Only wrap in <p> if not already wrapped
+        if (!paragraph.startsWith('<p>')) {
+          return `<p>${paragraph}</p>`;
+        }
+        return paragraph;
+      })
       .join("\n");
   };
 
   const displayContent = useMemo(() => {
-    if (!latestVersion) return null;
+    if (!multiVersionChanges) return null;
 
     return (
       <div className="bg-white rounded-lg shadow-lg p-8">
         <div className="text-center mb-8">
           <div className="text-gray-500 mb-2">THE NEW YORK TIMES</div>
-          <h1 className="text-4xl font-serif mb-4">{latestVersion.title}</h1>
+          <h1 className="text-4xl font-serif mb-4">
+            {multiVersionChanges.originalVersion.title}
+          </h1>
           <div className="text-gray-500">
-            Last updated: {new Date(latestVersion.created_at).toLocaleString()}
+            Original version: {new Date(multiVersionChanges.originalVersion.created_at).toLocaleString()}
           </div>
+          {multiVersionChanges.changes.length > 0 && (
+            <div className="text-sm text-gray-500 mt-2">
+              Latest update: {new Date(multiVersionChanges.changes[multiVersionChanges.changes.length - 1].version.created_at).toLocaleString()}
+            </div>
+          )}
         </div>
         <div className="prose max-w-none">
           <div
             dangerouslySetInnerHTML={{
-              __html: combineContentAndDiff(
-                latestVersion.content,
-                latestVersion.diff || ""
-              ),
+              __html: multiVersionChanges.changes.length === 0 ?
+                formatContent(multiVersionChanges.originalVersion.content) :
+                combineContentAndDiff(
+                  multiVersionChanges.originalVersion.content,
+                  multiVersionChanges.changes
+                ),
             }}
           />
         </div>
       </div>
     );
-  }, [latestVersion]);
+  }, [multiVersionChanges]);
 
   return (
     <div className="flex h-screen">
@@ -295,25 +283,31 @@ export default function Home() {
               )}
             </div>
 
-            {showNewspaper && latestVersion && (
+            {showNewspaper && multiVersionChanges && (
               <div className="bg-white rounded-lg shadow-lg p-8">
                 <div className="text-center mb-8">
                   <div className="text-gray-500 mb-2">THE NEW YORK TIMES</div>
                   <h1 className="text-4xl font-serif mb-4">
-                    {latestVersion.title}
+                    {multiVersionChanges.originalVersion.title}
                   </h1>
                   <div className="text-gray-500">
-                    Last updated:{" "}
-                    {new Date(latestVersion.created_at).toLocaleString()}
+                    Original version: {new Date(multiVersionChanges.originalVersion.created_at).toLocaleString()}
                   </div>
+                  {multiVersionChanges.changes.length > 0 && (
+                    <div className="text-sm text-gray-500 mt-2">
+                      Latest update: {new Date(multiVersionChanges.changes[multiVersionChanges.changes.length - 1].version.created_at).toLocaleString()}
+                    </div>
+                  )}
                 </div>
                 <div className="prose max-w-none article-content">
                   <div
                     dangerouslySetInnerHTML={{
-                      __html: combineContentAndDiff(
-                        latestVersion.content,
-                        latestVersion.diff || ""
-                      ),
+                      __html: multiVersionChanges.changes.length === 0 ?
+                        formatContent(multiVersionChanges.originalVersion.content) :
+                        combineContentAndDiff(
+                          multiVersionChanges.originalVersion.content,
+                          multiVersionChanges.changes
+                        ),
                     }}
                   />
                 </div>

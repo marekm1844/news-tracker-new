@@ -3,13 +3,13 @@
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { format } from "date-fns";
 import { useCallback, useEffect, useState } from "react";
-import { api, Article, ArticleVersion, ChangesSummary } from "@/lib/api-client";
+import { api, Article, ArticleVersion, ChangesSummary, MultiVersionChanges } from "@/lib/api-client";
 import { useToast } from "@/components/ui/use-toast";
 import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 
 interface SideMenuProps {
-  onArticleSelect: (url: string, latestVersion: ArticleVersion | null) => void;
+  onArticleSelect: (url: string, changes: MultiVersionChanges | null) => void;
   changesSummary: ChangesSummary | null;
 }
 
@@ -35,33 +35,39 @@ export default function SideMenu({ onArticleSelect, changesSummary }: SideMenuPr
   }, [toast]);
 
   const handleArticleClick = async (article: Article) => {
-    console.log('Article selected:', article);
-    setSelectedArticle(article);
-
     try {
-      // Get latest version immediately
-      const latestVersion = await api.getLatestVersion(article.id);
-      setLatestVersion(latestVersion);
+      console.log('Article selected:', article);
       
-      // Get all versions for analysis
+      // Get all versions
       const versions = await api.getVersions(article.id);
-      const originalVersion = versions[0];
+      if (versions.length === 0) {
+        throw new Error("No versions found for article");
+      }
+
+      // Compare all versions
+      const multiVersionChanges = await api.compareMultipleVersions(versions);
+      
+      // Set states only after we have all the data
+      setSelectedArticle(article);
+      onArticleSelect(article.url, multiVersionChanges);
 
       if (versions.length > 1) {
-        const analysisResult = await api.compareContent(
-          originalVersion.content,
-          latestVersion.content
-        );
+        // Create a combined explanation of all changes
+        const changeExplanations = multiVersionChanges.changes
+          .map((change, index) => 
+            `Version ${index + 2}: ${change.changes.explanation}`
+          )
+          .join('\n\n');
 
         setChangesSummary({
-          type: analysisResult.type,
-          explanation: analysisResult.explanation,
+          type: multiVersionChanges.changes[0].changes.type as "editorial" | "substantial" | "multiple",
+          explanation: changeExplanations,
           loading: false,
         });
 
         toast({
           title: "Analysis complete",
-          description: "Article changes have been analyzed.",
+          description: `Analyzed ${versions.length - 1} version changes.`,
         });
       } else {
         setChangesSummary({
@@ -83,8 +89,6 @@ export default function SideMenu({ onArticleSelect, changesSummary }: SideMenuPr
         variant: "destructive",
       });
     }
-
-    onArticleSelect(article.url, latestVersion);
   };
 
   useEffect(() => {
